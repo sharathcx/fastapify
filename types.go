@@ -1,4 +1,4 @@
-package utils
+package fastapify
 
 import (
 	"errors"

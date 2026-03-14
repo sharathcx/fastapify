@@ -64,8 +64,8 @@ func GetUser(c *gin.Context, req *UserIdReq) (*User, error) {
 			return &u, nil
 		}
 	}
-	// Return a structured error using utils.NewApiError
-	return nil, utils.NewApiError(404, "User not found", utils.ErrNotFound, nil)
+	// Return a structured error using fastapify.NewApiError
+	return nil, fastapify.NewApiError(404, "User not found", fastapify.ErrNotFound, nil)
 }
 
 // CreateUser - POST /users
@@ -100,7 +100,7 @@ func UpdateUser(c *gin.Context, req *UpdateReqCombined) (*User, error) {
 			return &users[i], nil
 		}
 	}
-	return nil, utils.NewApiError(404, "User not found", utils.ErrNotFound, nil)
+	return nil, fastapify.NewApiError(404, "User not found", fastapify.ErrNotFound, nil)
 }
 
 // DeleteUser - DELETE /users/{id}
@@ -111,7 +111,7 @@ func DeleteUser(c *gin.Context, req *UserIdReq) (*struct{}, error) {
 			return nil, nil // Return nil for success with no body
 		}
 	}
-	return nil, utils.NewApiError(404, "User not found", utils.ErrNotFound, nil)
+	return nil, fastapify.NewApiError(404, "User not found", fastapify.ErrNotFound, nil)
 }
 ```
 
@@ -163,10 +163,10 @@ Fastapify automatically wraps your successful responses in a standard `ApiRespon
 }
 ```
 
-If you return an `error` from your handler, it handles validation errors and standard errors by automatically generating a consistent JSON response. You can also return structured HTTP errors using `utils.NewApiError`:
+If you return an `error` from your handler, it handles validation errors and standard errors by automatically generating a consistent JSON response. You can also return structured HTTP errors using `fastapify.NewApiError`:
 
 ```go
-return nil, utils.NewApiError(404, "Item not found", utils.ErrNotFound, nil)
+return nil, fastapify.NewApiError(404, "Item not found", fastapify.ErrNotFound, nil)
 ```
 
 Which produces:
