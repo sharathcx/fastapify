@@ -62,7 +62,8 @@ func GetUser(c *gin.Context, req *UserIdReq) (*User, error) {
 			return &u, nil
 		}
 	}
-	return nil, errors.New("user not found")
+	// Return a structured error using utils.NewApiError
+	return nil, utils.NewApiError(404, "User not found", utils.ErrNotFound, nil)
 }
 
 // CreateUser - POST /users
@@ -97,7 +98,7 @@ func UpdateUser(c *gin.Context, req *UpdateReqCombined) (*User, error) {
 			return &users[i], nil
 		}
 	}
-	return nil, errors.New("user not found")
+	return nil, utils.NewApiError(404, "User not found", utils.ErrNotFound, nil)
 }
 
 // DeleteUser - DELETE /users/{id}
@@ -108,7 +109,7 @@ func DeleteUser(c *gin.Context, req *UserIdReq) (*struct{}, error) {
 			return nil, nil // Return nil for success with no body
 		}
 	}
-	return nil, errors.New("user not found")
+	return nil, utils.NewApiError(404, "User not found", utils.ErrNotFound, nil)
 }
 ```
 
@@ -146,8 +147,39 @@ func main() {
 }
 ```
 
+## Error Handling & Responses
+
+Fastapify automatically wraps your successful responses in a standard `ApiResponse` structure, which looks like this:
+
+```json
+{
+  "statusCode": 200,
+  "data": { ... },
+  "message": "Success",
+  "success": true,
+  "code": "SUCCESS"
+}
+```
+
+If you return an `error` from your handler, it handles validation errors and standard errors by automatically generating a consistent JSON response. You can also return structured HTTP errors using `utils.NewApiError`:
+
+```go
+return nil, utils.NewApiError(404, "Item not found", utils.ErrNotFound, nil)
+```
+
+Which produces:
+
+```json
+{
+  "success": false,
+  "code": "NOT_FOUND",
+  "message": "Item not found",
+  "errors": null
+}
+```
+
 ## Features
 
 - **Generic Handlers:** No need to manually write `c.ShouldBindJSON` or `c.ShouldBindUri`. Just define your structs and Fastapify handles the rest.
 - **Auto Swagger Generation:** Fastapify inspects your structs and automatically builds an OpenAPI 3.0 specification.
-- **Standardized Error Handling:** Any error returned from your handler automatically results in a `500 Internal Server Error` (or `400 Bad Request` if input binding fails).
+- **Standardized Error Handling:** Consistent `ApiResponse` and `ApiError` shapes applied automatically to every endpoint.
