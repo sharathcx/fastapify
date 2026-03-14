@@ -184,4 +184,5 @@ Which produces:
 
 - **Generic Handlers:** No need to manually write `c.ShouldBindJSON` or `c.ShouldBindUri`. Just define your structs and Fastapify handles the rest.
 - **Auto Swagger Generation:** Fastapify inspects your structs and automatically builds an OpenAPI 3.0 specification.
+- **Flexible Route Syntax:** Supports both Gin-style `:id` and OpenAPI-style `{id}` parameters. They are normalized automatically for both routing and documentation.
 - **Standardized Error Handling:** Consistent `ApiResponse` and `ApiError` shapes applied automatically to every endpoint.

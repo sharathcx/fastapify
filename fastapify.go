@@ -54,18 +54,31 @@ func deriveTag(path string) string {
 }
 
 func register[Req any, Res any](w *Wrapper, method, path string, handler func(*gin.Context, *Req) (*Res, error), middleware ...gin.HandlerFunc) {
+	// 1. Normalize for Swagger (OpenAPI uses {param})
+	swaggerPath := path
+	if strings.Contains(path, ":") {
+		parts := strings.Split(path, "/")
+		for i, part := range parts {
+			if strings.HasPrefix(part, ":") {
+				parts[i] = "{" + part[1:] + "}"
+			}
+		}
+		swaggerPath = strings.Join(parts, "/")
+	}
+
 	w.Routes = append(w.Routes, RouteMeta{
 		Method: method,
-		Path:   path,
+		Path:   swaggerPath,
 		Tag:    deriveTag(path),
 		Input:  reflect.TypeOf(*new(Req)),
 		Output: reflect.TypeOf(*new(Res)),
 	})
 
+	// 2. Normalize for Gin (uses :param)
 	ginPath := strings.ReplaceAll(path, "{", ":")
 	ginPath = strings.ReplaceAll(ginPath, "}", "")
 
-	hasUriParams := strings.Contains(path, "{")
+	hasUriParams := strings.Contains(path, "{") || strings.Contains(path, ":")
 
 	handlers := make([]gin.HandlerFunc, 0, len(middleware)+1)
 	handlers = append(handlers, middleware...)
