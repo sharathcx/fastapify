@@ -48,8 +48,8 @@ Fastapify handlers take a `*gin.Context` and a pointer to your defined Request s
 package controllers
 
 import (
-	"errors"
 	"github.com/gin-gonic/gin"
+	"github.com/sharathcx/fastapify"
 )
 
 var users = []User{
