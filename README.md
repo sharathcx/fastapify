@@ -1,5 +1,7 @@
 # Fastapify
 
+![Fastapify Swagger UI](image.png)
+
 Fastapify is a minimalist Go module built on top of [Gin](https://gin-gonic.com/) that provides automatic request/response binding and OpenAPI (Swagger) documentation generation. It simplifies routing by using generic handlers to automatically bind JSON bodies and URI parameters.
 
 ## Installation
