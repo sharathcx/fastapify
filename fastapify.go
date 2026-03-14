@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sharathcx/fastapify/utils"
 )
 
 type Wrapper struct {
@@ -74,14 +75,16 @@ func register[Req any, Res any](w *Wrapper, method, path string, handler func(*g
 
 		if hasUriParams {
 			if err := c.ShouldBindUri(req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				statusCode, response := utils.HandleError(err)
+				c.JSON(statusCode, response)
 				return
 			}
 		}
 
 		if method == http.MethodPost || method == http.MethodPut || method == http.MethodPatch {
 			if err := c.ShouldBindJSON(req); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				statusCode, response := utils.HandleError(err)
+				c.JSON(statusCode, response)
 				return
 			}
 		}
@@ -89,14 +92,15 @@ func register[Req any, Res any](w *Wrapper, method, path string, handler func(*g
 		// 3. Business logic invocation
 		res, err := handler(c, req)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			statusCode, response := utils.HandleError(err)
+			c.JSON(statusCode, response)
 			return
 		}
 
 		if res != nil {
-			c.JSON(http.StatusOK, res)
+			c.JSON(http.StatusOK, utils.NewApiResponse(http.StatusOK, res, "Success"))
 		} else {
-			c.JSON(http.StatusOK, gin.H{"message": "Success"})
+			c.JSON(http.StatusOK, utils.NewApiResponse[*Res](http.StatusOK, nil, "Success"))
 		}
 	})
 
