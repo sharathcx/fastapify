@@ -2,7 +2,7 @@
 
 ![Fastapify Swagger UI](image.png)
 
-Fastapify is a minimalist Go module built on top of [Gin](https://gin-gonic.com/) that provides automatic request/response binding and OpenAPI (Swagger) documentation generation. It simplifies routing by using generic handlers to automatically bind JSON bodies and URI parameters.
+Fastapify is a minimalist Go module built on top of [Gin](https://gin-gonic.com/) that provides automatic request/response binding and OpenAPI (Swagger) documentation generation. It simplifies routing by using generic handlers to automatically bind JSON bodies, URI parameters, and query parameters.
 
 ## Installation
 
@@ -12,7 +12,7 @@ go get github.com/sharathcx/fastapify@v0.1.1
 
 ## Setup & Example Usage
 
-Here is a complete example of setting up a CRUD API for managing "Users" using Fastapify. 
+Here is a complete example of setting up a CRUD API for managing "Users" using Fastapify. You can find the runnable code in the [examples/user-api](examples/user-api) directory.
 
 ### 1. Define your Models
 
@@ -37,6 +37,12 @@ type UpdateUserReq struct {
 
 type UserIdReq struct {
 	ID int `uri:"id" binding:"required"`
+}
+
+// Example for Query Parameters
+type ListUsersQuery struct {
+	Search string `form:"search"` // "form" tag is used for query parameters
+	Limit  int    `form:"limit"`
 }
 ```
 
@@ -80,7 +86,7 @@ func CreateUser(c *gin.Context, req *CreateUserReq) (*User, error) {
 	return &newUser, nil
 }
 
-// UpdateUser - PUT /users/{id}
+// UpdateUser - PATCH /users/{id}
 // Notice how we can combine URI params (ID) and JSON Body params in a single struct
 type UpdateReqCombined struct {
 	ID    int    `uri:"id" binding:"required"` // from URI
@@ -136,7 +142,7 @@ func main() {
 	// Register Routes
 	fastapify.Get(app, "/users/{id}", controllers.GetUser)
 	fastapify.Post(app, "/users", controllers.CreateUser)
-	fastapify.Put(app, "/users/{id}", controllers.UpdateUser)
+	fastapify.Patch(app, "/users/{id}", controllers.UpdateUser) // Use Patch for partial updates
 	fastapify.Delete(app, "/users/{id}", controllers.DeleteUser)
 
 	// Setup Swagger UI
@@ -186,3 +192,5 @@ Which produces:
 - **Auto Swagger Generation:** Fastapify inspects your structs and automatically builds an OpenAPI 3.0 specification.
 - **Flexible Route Syntax:** Supports both Gin-style `:id` and OpenAPI-style `{id}` parameters. They are normalized automatically for both routing and documentation.
 - **Standardized Error Handling:** Consistent `ApiResponse` and `ApiError` shapes applied automatically to every endpoint.
+- **Full HTTP Support:** Support for GET, POST, PUT, PATCH, and DELETE methods.
+- **Query Parameter Binding:** Use the `form` tag in your structs to easily bind query string parameters.
