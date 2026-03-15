@@ -1,120 +1,66 @@
 package fastapify
 
 import (
-	"net/http"
-	"reflect"
-	"strings"
-
 	"github.com/gin-gonic/gin"
+	"github.com/sharathcx/fastapify/internal/openapi"
+	"github.com/sharathcx/fastapify/internal/response"
+	"github.com/sharathcx/fastapify/internal/router"
 )
 
+// Re-export error types and functions for convenience
+type ApiError = response.ApiError
+
+var NewApiError = response.NewApiError
+
+const (
+	ErrValidation       = response.ErrValidation
+	ErrBadRequest       = response.ErrBadRequest
+	ErrUnauthorized     = response.ErrUnauthorized
+	ErrForbidden        = response.ErrForbidden
+	ErrNotFound         = response.ErrNotFound
+	ErrResourceConflict = response.ErrResourceConflict
+	ErrUploadError      = response.ErrUploadError
+	ErrInternalError    = response.ErrInternalError
+)
+
+// Wrapper is the main Fastapify application instance.
 type Wrapper struct {
-	Engine *gin.Engine
-	Routes []RouteMeta
+	*router.Wrapper
 }
 
-type RouteMeta struct {
-	Method string
-	Path   string
-	Tag    string
-	Input  reflect.Type
-	Output reflect.Type
-}
-
+// New creates a new Fastapify application instance.
 func New(r *gin.Engine) *Wrapper {
-	return &Wrapper{Engine: r}
+	return &Wrapper{
+		Wrapper: router.New(r),
+	}
 }
 
+// Get registers a new GET route.
 func Get[Req any, Res any](w *Wrapper, path string, handler func(*gin.Context, *Req) (*Res, error), middleware ...gin.HandlerFunc) {
-	register(w, http.MethodGet, path, handler, middleware...)
+	router.Get(w.Wrapper, path, handler, middleware...)
 }
 
+// Post registers a new POST route.
 func Post[Req any, Res any](w *Wrapper, path string, handler func(*gin.Context, *Req) (*Res, error), middleware ...gin.HandlerFunc) {
-	register(w, http.MethodPost, path, handler, middleware...)
+	router.Post(w.Wrapper, path, handler, middleware...)
 }
 
+// Put registers a new PUT route.
 func Put[Req any, Res any](w *Wrapper, path string, handler func(*gin.Context, *Req) (*Res, error), middleware ...gin.HandlerFunc) {
-	register(w, http.MethodPut, path, handler, middleware...)
+	router.Put(w.Wrapper, path, handler, middleware...)
 }
 
+// Patch registers a new PATCH route.
 func Patch[Req any, Res any](w *Wrapper, path string, handler func(*gin.Context, *Req) (*Res, error), middleware ...gin.HandlerFunc) {
-	register(w, http.MethodPatch, path, handler, middleware...)
+	router.Patch(w.Wrapper, path, handler, middleware...)
 }
 
+// Delete registers a new DELETE route.
 func Delete[Req any, Res any](w *Wrapper, path string, handler func(*gin.Context, *Req) (*Res, error), middleware ...gin.HandlerFunc) {
-	register(w, http.MethodDelete, path, handler, middleware...)
+	router.Delete(w.Wrapper, path, handler, middleware...)
 }
 
-func deriveTag(path string) string {
-	trimmed := strings.TrimPrefix(path, "/")
-	if idx := strings.Index(trimmed, "/"); idx != -1 {
-		return strings.Title(trimmed[:idx])
-	}
-	return strings.Title(trimmed)
-}
-
-func register[Req any, Res any](w *Wrapper, method, path string, handler func(*gin.Context, *Req) (*Res, error), middleware ...gin.HandlerFunc) {
-	// 1. Normalize for Swagger (OpenAPI uses {param})
-	swaggerPath := path
-	if strings.Contains(path, ":") {
-		parts := strings.Split(path, "/")
-		for i, part := range parts {
-			if strings.HasPrefix(part, ":") {
-				parts[i] = "{" + part[1:] + "}"
-			}
-		}
-		swaggerPath = strings.Join(parts, "/")
-	}
-
-	w.Routes = append(w.Routes, RouteMeta{
-		Method: method,
-		Path:   swaggerPath,
-		Tag:    deriveTag(path),
-		Input:  reflect.TypeOf(*new(Req)),
-		Output: reflect.TypeOf(*new(Res)),
-	})
-
-	// 2. Normalize for Gin (uses :param)
-	ginPath := strings.ReplaceAll(path, "{", ":")
-	ginPath = strings.ReplaceAll(ginPath, "}", "")
-
-	hasUriParams := strings.Contains(path, "{") || strings.Contains(path, ":")
-
-	handlers := make([]gin.HandlerFunc, 0, len(middleware)+1)
-	handlers = append(handlers, middleware...)
-	handlers = append(handlers, func(c *gin.Context) {
-		req := new(Req)
-
-		if hasUriParams {
-			if err := c.ShouldBindUri(req); err != nil {
-				statusCode, response := HandleError(err)
-				c.JSON(statusCode, response)
-				return
-			}
-		}
-
-		if method == http.MethodPost || method == http.MethodPut || method == http.MethodPatch {
-			if err := c.ShouldBindJSON(req); err != nil {
-				statusCode, response := HandleError(err)
-				c.JSON(statusCode, response)
-				return
-			}
-		}
-
-		// 3. Business logic invocation
-		res, err := handler(c, req)
-		if err != nil {
-			statusCode, response := HandleError(err)
-			c.JSON(statusCode, response)
-			return
-		}
-
-		if res != nil {
-			c.JSON(http.StatusOK, NewApiResponse(http.StatusOK, res, "Success"))
-		} else {
-			c.JSON(http.StatusOK, NewApiResponse[*Res](http.StatusOK, nil, "Success"))
-		}
-	})
-
-	w.Engine.Handle(method, ginPath, handlers...)
+// SetupSwagger initializes the Swagger UI and OpenAPI JSON endpoint.
+func (w *Wrapper) SetupSwagger(jsonPath string) {
+	openapi.SetupSwagger(w.Wrapper, jsonPath)
 }
