@@ -10,7 +10,26 @@ Fastapify is a minimalist Go module built on top of [Gin](https://gin-gonic.com/
 go get github.com/sharathcx/fastapify@v0.1.1
 ```
 
-## Setup & Example Usage
+## Running Sample Examples
+
+The project includes examples to help you get started quickly.
+
+### 1. Simple In-Memory Example
+A basic CRUD API using an in-memory slice.
+```bash
+go run ./examples/simple/main.go
+```
+
+### 2. Database (GORM + SQLite) Example
+A full CRUD API using GORM and a local SQLite database (pure Go, no CGO required).
+```bash
+go run ./examples/database/main.go
+```
+
+Once the server is running, visit `http://localhost:8080/docs` to access the interactive Swagger UI.
+
+
+## Setup & Usage 
 
 Here is a complete example of setting up a CRUD API for managing "Users" using Fastapify. 
 
@@ -186,3 +205,5 @@ Which produces:
 - **Auto Swagger Generation:** Fastapify inspects your structs and automatically builds an OpenAPI 3.0 specification.
 - **Flexible Route Syntax:** Supports both Gin-style `:id` and OpenAPI-style `{id}` parameters. They are normalized automatically for both routing and documentation.
 - **Standardized Error Handling:** Consistent `ApiResponse` and `ApiError` shapes applied automatically to every endpoint.
+
+
