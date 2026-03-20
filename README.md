@@ -2,12 +2,12 @@
 
 ![Fastapify Swagger UI](image.png)
 
-Fastapify is a minimalist Go module built on top of [Gin](https://gin-gonic.com/) that provides automatic request/response binding and OpenAPI (Swagger) documentation generation. It simplifies routing by using generic handlers to automatically bind JSON bodies, URI parameters, and query parameters.
+Fastapify is a minimalist Go module built on top of [Gin](https://gin-gonic.com/) that provides automatic request validation/binding and OpenAPI (Swagger) documentation generation. It simplifies routing with a chainable builder API, auto-validation middleware, and a generic `Req[T]()` helper to retrieve bound request data.
 
 ## Installation
 
 ```bash
-go get github.com/sharathcx/fastapify@v0.1.1
+go get github.com/sharathcx/fastapify
 ```
 
 ## Setup & Example Usage
@@ -30,25 +30,27 @@ type CreateUserReq struct {
 	Email string `json:"email" binding:"required"`
 }
 
-type UpdateUserReq struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-}
-
 type UserIdReq struct {
 	ID int `uri:"id" binding:"required"`
 }
 
-// Example for Query Parameters
+// Use the "form" tag for query parameters
 type ListUsersQuery struct {
-	Search string `form:"search"` // "form" tag is used for query parameters
+	Search string `form:"search"`
 	Limit  int    `form:"limit"`
+}
+
+// Combine URI params and JSON body params in a single struct
+type UpdateReqCombined struct {
+	ID    int    `uri:"id" binding:"required"` // from URI
+	Name  string `json:"name"`                 // from JSON body
+	Email string `json:"email"`                // from JSON body
 }
 ```
 
 ### 2. Create the Controller Handlers
 
-Fastapify handlers take a `*gin.Context` and a pointer to your defined Request struct, and return a pointer to your Response struct and an `error`.
+Handlers are standard `gin.HandlerFunc` functions. Use `fastapify.Req[T](c)` to retrieve the automatically validated and bound request data.
 
 ```go
 package controllers
@@ -64,18 +66,22 @@ var users = []User{
 var nextID = 2
 
 // GetUser - GET /users/{id}
-func GetUser(c *gin.Context, req *UserIdReq) (*User, error) {
+func GetUser(c *gin.Context) {
+	req := fastapify.Req[UserIdReq](c)
+
 	for _, u := range users {
 		if u.ID == req.ID {
-			return &u, nil
+			c.JSON(200, u)
+			return
 		}
 	}
-	// Return a structured error using fastapify.NewApiError
-	return nil, fastapify.NewApiError(404, "User not found", fastapify.ErrNotFound, nil)
+	c.JSON(404, gin.H{"error": "User not found"})
 }
 
 // CreateUser - POST /users
-func CreateUser(c *gin.Context, req *CreateUserReq) (*User, error) {
+func CreateUser(c *gin.Context) {
+	req := fastapify.Req[CreateUserReq](c)
+
 	newUser := User{
 		ID:    nextID,
 		Name:  req.Name,
@@ -83,18 +89,13 @@ func CreateUser(c *gin.Context, req *CreateUserReq) (*User, error) {
 	}
 	users = append(users, newUser)
 	nextID++
-	return &newUser, nil
+	c.JSON(200, newUser)
 }
 
 // UpdateUser - PATCH /users/{id}
-// Notice how we can combine URI params (ID) and JSON Body params in a single struct
-type UpdateReqCombined struct {
-	ID    int    `uri:"id" binding:"required"` // from URI
-	Name  string `json:"name"`                 // from JSON body
-	Email string `json:"email"`                // from JSON body
-}
+func UpdateUser(c *gin.Context) {
+	req := fastapify.Req[UpdateReqCombined](c)
 
-func UpdateUser(c *gin.Context, req *UpdateReqCombined) (*User, error) {
 	for i, u := range users {
 		if u.ID == req.ID {
 			if req.Name != "" {
@@ -103,33 +104,38 @@ func UpdateUser(c *gin.Context, req *UpdateReqCombined) (*User, error) {
 			if req.Email != "" {
 				users[i].Email = req.Email
 			}
-			return &users[i], nil
+			c.JSON(200, users[i])
+			return
 		}
 	}
-	return nil, fastapify.NewApiError(404, "User not found", fastapify.ErrNotFound, nil)
+	c.JSON(404, gin.H{"error": "User not found"})
 }
 
 // DeleteUser - DELETE /users/{id}
-func DeleteUser(c *gin.Context, req *UserIdReq) (*struct{}, error) {
+func DeleteUser(c *gin.Context) {
+	req := fastapify.Req[UserIdReq](c)
+
 	for i, u := range users {
 		if u.ID == req.ID {
 			users = append(users[:i], users[i+1:]...)
-			return nil, nil // Return nil for success with no body
+			c.JSON(200, gin.H{"message": "Deleted"})
+			return
 		}
 	}
-	return nil, fastapify.NewApiError(404, "User not found", fastapify.ErrNotFound, nil)
+	c.JSON(404, gin.H{"error": "User not found"})
 }
 ```
 
 ### 3. Register Routes in Main
 
-Now, wrap your Gin router with `fastapify.New()` and use the typed routing functions (`fastapify.Get`, `fastapify.Post`, etc.).
+Wrap your Gin router with `fastapify.New()` and use the chainable builder to register routes with `.Body()` and `.Response()` for OpenAPI schema generation.
 
 ```go
 package main
 
 import (
 	"log"
+
 	"github.com/gin-gonic/gin"
 	"github.com/sharathcx/fastapify"
 	"yourproject/controllers"
@@ -139,11 +145,21 @@ func main() {
 	r := gin.Default()
 	app := fastapify.New(r)
 
-	// Register Routes
-	fastapify.Get(app, "/users/{id}", controllers.GetUser)
-	fastapify.Post(app, "/users", controllers.CreateUser)
-	fastapify.Patch(app, "/users/{id}", controllers.UpdateUser) // Use Patch for partial updates
-	fastapify.Delete(app, "/users/{id}", controllers.DeleteUser)
+	// Register Routes with schema declarations for Swagger
+	app.GET("/users/{id}", controllers.GetUser).
+		Body(controllers.UserIdReq{}).
+		Response(controllers.User{})
+
+	app.POST("/users", controllers.CreateUser).
+		Body(controllers.CreateUserReq{}).
+		Response(controllers.User{})
+
+	app.PATCH("/users/{id}", controllers.UpdateUser).
+		Body(controllers.UpdateReqCombined{}).
+		Response(controllers.User{})
+
+	app.DELETE("/users/{id}", controllers.DeleteUser).
+		Body(controllers.UserIdReq{})
 
 	// Setup Swagger UI
 	// This will generate docs at /openapi.json and serve the UI at /docs
@@ -155,42 +171,53 @@ func main() {
 }
 ```
 
-## Error Handling & Responses
+## How It Works
 
-Fastapify automatically wraps your successful responses in a standard `ApiResponse` structure, which looks like this:
+### Auto-Validation Middleware
 
-```json
-{
-  "statusCode": 200,
-  "data": { ... },
-  "message": "Success",
-  "success": true,
-  "code": "SUCCESS"
-}
-```
+When you register a route with `.Body(MyStruct{})`, Fastapify automatically injects validation middleware that:
 
-If you return an `error` from your handler, it handles validation errors and standard errors by automatically generating a consistent JSON response. You can also return structured HTTP errors using `fastapify.NewApiError`:
+1. Binds URI parameters first and snapshots their values
+2. Binds the request body (POST/PUT/PATCH) or query params (GET/DELETE)
+3. Restores URI values to prevent body payloads from overriding path parameters
+4. Returns a `422` validation error if binding fails
+5. Stores the validated struct in the Gin context
+
+Your handler then retrieves the pre-validated data with `fastapify.Req[T](c)` — no manual binding needed.
+
+### Manual Binding
+
+If you prefer to handle binding yourself, you can use `fastapify.Bind()` directly:
 
 ```go
-return nil, fastapify.NewApiError(404, "Item not found", fastapify.ErrNotFound, nil)
-```
-
-Which produces:
-
-```json
-{
-  "success": false,
-  "code": "NOT_FOUND",
-  "message": "Item not found",
-  "errors": null
+func MyHandler(c *gin.Context) {
+	var req MyRequest
+	if !fastapify.Bind(c, &req) {
+		return // error response already sent
+	}
+	// use req...
 }
 ```
+
+## Error Handling
+
+You can return structured HTTP errors using `fastapify.NewApiError`:
+
+```go
+fastapify.NewApiError(404, "Item not found", fastapify.ErrNotFound, nil)
+```
+
+Available error codes: `ErrValidation`, `ErrBadRequest`, `ErrUnauthorized`, `ErrForbidden`, `ErrNotFound`, `ErrResourceConflict`, `ErrUploadError`, `ErrInternalError`.
 
 ## Features
 
-- **Generic Handlers:** No need to manually write `c.ShouldBindJSON` or `c.ShouldBindUri`. Just define your structs and Fastapify handles the rest.
-- **Auto Swagger Generation:** Fastapify inspects your structs and automatically builds an OpenAPI 3.0 specification.
-- **Flexible Route Syntax:** Supports both Gin-style `:id` and OpenAPI-style `{id}` parameters. They are normalized automatically for both routing and documentation.
-- **Standardized Error Handling:** Consistent `ApiResponse` and `ApiError` shapes applied automatically to every endpoint.
-- **Full HTTP Support:** Support for GET, POST, PUT, PATCH, and DELETE methods.
-- **Query Parameter Binding:** Use the `form` tag in your structs to easily bind query string parameters.
+- **Auto-Validation Middleware:** Requests are automatically validated and bound before your handler runs. Use `fastapify.Req[T](c)` to access the result.
+- **URI Parameter Protection:** URI parameters are bound first and protected from being overridden by the request body.
+- **Chainable Route Builder:** `app.GET("/path", handler).Body(ReqStruct{}).Response(RespStruct{})` for clean route registration with OpenAPI schema.
+- **Auto Swagger Generation:** Inspects your structs and automatically builds an OpenAPI 3.0 specification with Swagger UI.
+- **Flexible Route Syntax:** Supports both Gin-style `:id` and OpenAPI-style `{id}` parameters, normalized automatically.
+- **Standardized Error Handling:** Consistent `ApiError` structure with built-in validation error formatting.
+- **Full HTTP Support:** GET, POST, PUT, PATCH, and DELETE methods.
+- **Query Parameter Binding:** Use the `form` tag in your structs to bind query string parameters.
+- **Middleware Support:** Pass per-route middleware: `app.GET("/path", handler, authMiddleware)`.
+- **Timeout Middleware:** Built-in `fastapify.TimeoutMiddleware(duration)` for request timeouts.

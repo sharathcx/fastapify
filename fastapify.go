@@ -2,13 +2,16 @@ package fastapify
 
 import (
 	"github.com/gin-gonic/gin"
+
+	"github.com/sharathcx/fastapify/internal/bind"
 	"github.com/sharathcx/fastapify/internal/openapi"
 	"github.com/sharathcx/fastapify/internal/response"
 	"github.com/sharathcx/fastapify/internal/router"
 )
 
-// Re-export error types and functions for convenience
+// Re-export types for public API
 type ApiError = response.ApiError
+type RouteMeta = router.RouteMeta
 
 var NewApiError = response.NewApiError
 
@@ -23,44 +26,36 @@ const (
 	ErrInternalError    = response.ErrInternalError
 )
 
+// Re-export middleware
+var TimeoutMiddleware = router.TimeoutMiddleware
+
 // Wrapper is the main Fastapify application instance.
 type Wrapper struct {
-	*router.Wrapper
+	*router.Router
 }
 
 // New creates a new Fastapify application instance.
 func New(r *gin.Engine) *Wrapper {
 	return &Wrapper{
-		Wrapper: router.New(r),
+		Router: router.New(r),
 	}
 }
 
-// Get registers a new GET route.
-func Get[Req any, Res any](w *Wrapper, path string, handler func(*gin.Context, *Req) (*Res, error), middleware ...gin.HandlerFunc) {
-	router.Get(w.Wrapper, path, handler, middleware...)
+// Req retrieves the automatically bound and validated request data from the context.
+func Req[T any](c *gin.Context) *T {
+	val, exists := c.Get("fastapify_body")
+	if !exists {
+		return new(T)
+	}
+	return val.(*T)
 }
 
-// Post registers a new POST route.
-func Post[Req any, Res any](w *Wrapper, path string, handler func(*gin.Context, *Req) (*Res, error), middleware ...gin.HandlerFunc) {
-	router.Post(w.Wrapper, path, handler, middleware...)
-}
-
-// Put registers a new PUT route.
-func Put[Req any, Res any](w *Wrapper, path string, handler func(*gin.Context, *Req) (*Res, error), middleware ...gin.HandlerFunc) {
-	router.Put(w.Wrapper, path, handler, middleware...)
-}
-
-// Patch registers a new PATCH route.
-func Patch[Req any, Res any](w *Wrapper, path string, handler func(*gin.Context, *Req) (*Res, error), middleware ...gin.HandlerFunc) {
-	router.Patch(w.Wrapper, path, handler, middleware...)
-}
-
-// Delete registers a new DELETE route.
-func Delete[Req any, Res any](w *Wrapper, path string, handler func(*gin.Context, *Req) (*Res, error), middleware ...gin.HandlerFunc) {
-	router.Delete(w.Wrapper, path, handler, middleware...)
+// Bind validates and binds the request into the given struct.
+func Bind(c *gin.Context, req any) bool {
+	return bind.Bind(c, req)
 }
 
 // SetupSwagger initializes the Swagger UI and OpenAPI JSON endpoint.
 func (w *Wrapper) SetupSwagger(jsonPath string) {
-	openapi.SetupSwagger(w.Wrapper, jsonPath)
+	openapi.SetupSwagger(w.Engine, w.Routes, jsonPath)
 }

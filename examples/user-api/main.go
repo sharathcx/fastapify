@@ -13,10 +13,20 @@ func main() {
 	app := fastapify.New(r)
 
 	// Register Routes
-	fastapify.Get(app, "/users/:id", controllers.GetUser)
-	fastapify.Post(app, "/users", controllers.CreateUser)
-	fastapify.Patch(app, "/users/:id", controllers.UpdateUser)
-	fastapify.Delete(app, "/users/:id", controllers.DeleteUser)
+	app.GET("/users/{id}", controllers.GetUser).
+		Body(controllers.UserIdReq{}).
+		Response(controllers.User{})
+
+	app.POST("/users", controllers.CreateUser).
+		Body(controllers.CreateUserReq{}).
+		Response(controllers.User{})
+
+	app.PATCH("/users/{id}", controllers.UpdateUser).
+		Body(controllers.UpdateReqCombined{}).
+		Response(controllers.User{})
+
+	app.DELETE("/users/{id}", controllers.DeleteUser).
+		Body(controllers.UserIdReq{})
 
 	// Setup Swagger UI
 	app.SetupSwagger("/openapi.json")
