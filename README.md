@@ -2,7 +2,7 @@
 
 ![Fastapify Swagger UI](image.png)
 
-Fastapify is a minimalist Go module built on top of [Gin](https://gin-gonic.com/) that provides automatic request validation/binding and OpenAPI (Swagger) documentation generation. It simplifies routing with a chainable builder API, auto-validation middleware, and a generic `Req[T]()` helper to retrieve bound request data.
+Fastapify is a minimalist Go module built on top of [Gin](https://gin-gonic.com/) that provides automatic request validation/binding, structured error handling, and OpenAPI (Swagger) documentation generation. It simplifies routing with a chainable builder API, auto-validation middleware, and a custom `HandlerFunc` that returns responses directly.
 
 ## Installation
 
@@ -50,7 +50,11 @@ type UpdateReqCombined struct {
 
 ### 2. Create the Controller Handlers
 
-Handlers are standard `gin.HandlerFunc` functions. Use `fastapify.Req[T](c)` to retrieve the automatically validated and bound request data.
+Handlers use the `fastapify.HandlerFunc` signature (`func(*gin.Context) any`). Return your response directly — Fastapify handles JSON serialization and error formatting automatically.
+
+- Return `fastapify.NewApiResponse(...)` for success responses
+- Return `fastapify.NotFound(...)`, `fastapify.BadRequest(...)`, etc. for errors
+- Use `fastapify.Req[T](c)` to retrieve the automatically validated and bound request data
 
 ```go
 package controllers
@@ -66,20 +70,19 @@ var users = []User{
 var nextID = 2
 
 // GetUser - GET /users/{id}
-func GetUser(c *gin.Context) {
+func GetUser(c *gin.Context) any {
 	req := fastapify.Req[UserIdReq](c)
 
 	for _, u := range users {
 		if u.ID == req.ID {
-			c.JSON(200, u)
-			return
+			return fastapify.NewApiResponse(200, u, "Success")
 		}
 	}
-	c.JSON(404, gin.H{"error": "User not found"})
+	return fastapify.NotFound("User not found")
 }
 
 // CreateUser - POST /users
-func CreateUser(c *gin.Context) {
+func CreateUser(c *gin.Context) any {
 	req := fastapify.Req[CreateUserReq](c)
 
 	newUser := User{
@@ -89,11 +92,11 @@ func CreateUser(c *gin.Context) {
 	}
 	users = append(users, newUser)
 	nextID++
-	c.JSON(200, newUser)
+	return fastapify.NewApiResponse(200, newUser, "Success")
 }
 
 // UpdateUser - PATCH /users/{id}
-func UpdateUser(c *gin.Context) {
+func UpdateUser(c *gin.Context) any {
 	req := fastapify.Req[UpdateReqCombined](c)
 
 	for i, u := range users {
@@ -104,25 +107,23 @@ func UpdateUser(c *gin.Context) {
 			if req.Email != "" {
 				users[i].Email = req.Email
 			}
-			c.JSON(200, users[i])
-			return
+			return fastapify.NewApiResponse(200, users[i], "Success")
 		}
 	}
-	c.JSON(404, gin.H{"error": "User not found"})
+	return fastapify.NotFound("User not found")
 }
 
 // DeleteUser - DELETE /users/{id}
-func DeleteUser(c *gin.Context) {
+func DeleteUser(c *gin.Context) any {
 	req := fastapify.Req[UserIdReq](c)
 
 	for i, u := range users {
 		if u.ID == req.ID {
 			users = append(users[:i], users[i+1:]...)
-			c.JSON(200, gin.H{"message": "Deleted"})
-			return
+			return fastapify.NewApiResponse[*User](200, nil, "Deleted")
 		}
 	}
-	c.JSON(404, gin.H{"error": "User not found"})
+	return fastapify.NotFound("User not found")
 }
 ```
 
@@ -161,8 +162,7 @@ func main() {
 	app.DELETE("/users/{id}", controllers.DeleteUser).
 		Body(controllers.UserIdReq{})
 
-	// Setup Swagger UI
-	// This will generate docs at /openapi.json and serve the UI at /docs
+	// Setup Swagger UI (JSON at /openapi.json, docs UI at /docs)
 	app.SetupSwagger("/openapi.json")
 
 	log.Println("Server running on http://localhost:8080")
@@ -172,6 +172,19 @@ func main() {
 ```
 
 ## How It Works
+
+### HandlerFunc & Auto-Response
+
+Fastapify uses a custom `HandlerFunc` signature:
+
+```go
+type HandlerFunc func(c *gin.Context) any
+```
+
+The return value is automatically serialized:
+- `*fastapify.ApiError` — formatted as a structured error response with the appropriate status code
+- Any other value — serialized as JSON with `200 OK`
+- `nil` — no response written (useful if you wrote directly to `c`)
 
 ### Auto-Validation Middleware
 
@@ -185,39 +198,108 @@ When you register a route with `.Body(MyStruct{})`, Fastapify automatically inje
 
 Your handler then retrieves the pre-validated data with `fastapify.Req[T](c)` — no manual binding needed.
 
+### Params Binding
+
+For routes with URI parameters, use `.Params()` to declare the params schema separately from the body:
+
+```go
+app.GET("/users/{id}", controllers.GetUser).
+	Params(controllers.UserIdReq{}).
+	Response(controllers.User{})
+```
+
+Retrieve params in your handler with `fastapify.Params[T](c)`.
+
+### Route Groups
+
+Group routes under a common prefix:
+
+```go
+users := app.Group("/users")
+
+users.GET("/{id}", controllers.GetUser).
+	Params(controllers.UserIdReq{}).
+	Response(controllers.User{})
+
+users.POST("", controllers.CreateUser).
+	Body(controllers.CreateUserReq{}).
+	Response(controllers.User{})
+```
+
 ### Manual Binding
 
 If you prefer to handle binding yourself, you can use `fastapify.Bind()` directly:
 
 ```go
-func MyHandler(c *gin.Context) {
+func MyHandler(c *gin.Context) any {
 	var req MyRequest
 	if !fastapify.Bind(c, &req) {
-		return // error response already sent
+		return nil // error response already sent
 	}
 	// use req...
+	return fastapify.NewApiResponse(200, result, "Success")
 }
 ```
 
 ## Error Handling
 
-You can return structured HTTP errors using `fastapify.NewApiError`:
+Fastapify provides convenience constructors for common HTTP errors:
 
 ```go
-fastapify.NewApiError(404, "Item not found", fastapify.ErrNotFound, nil)
+fastapify.NotFound("User not found")
+fastapify.BadRequest("Invalid input")
+fastapify.Unauthorized("Not authenticated")
+fastapify.Forbidden("Access denied")
+fastapify.Conflict("Resource already exists")
+fastapify.InternalError("Something went wrong")
+```
+
+For custom errors:
+
+```go
+fastapify.NewApiError(statusCode, "message", fastapify.ErrNotFound, nil)
 ```
 
 Available error codes: `ErrValidation`, `ErrBadRequest`, `ErrUnauthorized`, `ErrForbidden`, `ErrNotFound`, `ErrResourceConflict`, `ErrUploadError`, `ErrInternalError`.
 
+### Standardized Response Format
+
+Success responses:
+
+```json
+{
+  "statusCode": 200,
+  "data": { ... },
+  "message": "Success",
+  "success": true,
+  "code": "SUCCESS"
+}
+```
+
+Error responses:
+
+```json
+{
+  "success": false,
+  "code": "NOT_FOUND",
+  "message": "User not found",
+  "errors": null
+}
+```
+
 ## Features
 
-- **Auto-Validation Middleware:** Requests are automatically validated and bound before your handler runs. Use `fastapify.Req[T](c)` to access the result.
+- **Custom HandlerFunc:** Return responses directly — Fastapify handles JSON serialization and error formatting.
+- **Auto-Validation Middleware:** Requests are automatically validated and bound before your handler runs.
 - **URI Parameter Protection:** URI parameters are bound first and protected from being overridden by the request body.
-- **Chainable Route Builder:** `app.GET("/path", handler).Body(ReqStruct{}).Response(RespStruct{})` for clean route registration with OpenAPI schema.
-- **Auto Swagger Generation:** Inspects your structs and automatically builds an OpenAPI 3.0 specification with Swagger UI.
-- **Flexible Route Syntax:** Supports both Gin-style `:id` and OpenAPI-style `{id}` parameters, normalized automatically.
-- **Standardized Error Handling:** Consistent `ApiError` structure with built-in validation error formatting.
+- **Chainable Route Builder:** `app.GET("/path", handler).Body(Req{}).Response(Resp{})` for clean route registration with OpenAPI schema.
+- **Params Binding:** Separate URI params from body with `.Params()` and `fastapify.Params[T](c)`.
+- **Route Groups:** Group routes under a common prefix with `app.Group("/prefix")`.
+- **Auto Swagger Generation:** Inspects your structs and builds an OpenAPI 3.0 spec with Scalar API Reference UI.
+- **Flexible Route Syntax:** Supports both Gin-style `:id` and OpenAPI-style `{id}` parameters.
+- **Structured Error Handling:** Convenience error constructors and consistent `ApiError` / `ApiResponse` types.
 - **Full HTTP Support:** GET, POST, PUT, PATCH, and DELETE methods.
-- **Query Parameter Binding:** Use the `form` tag in your structs to bind query string parameters.
+- **Query Parameter Binding:** Use the `form` tag to bind query string parameters.
 - **Middleware Support:** Pass per-route middleware: `app.GET("/path", handler, authMiddleware)`.
 - **Timeout Middleware:** Built-in `fastapify.TimeoutMiddleware(duration)` for request timeouts.
+- **JWT Security Scheme:** OpenAPI spec includes BearerAuth/JWT security scheme by default.

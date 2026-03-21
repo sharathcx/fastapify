@@ -3,7 +3,6 @@ package controllers
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/sharathcx/fastapify"
-	"github.com/sharathcx/fastapify/internal/response"
 )
 
 // User model
@@ -41,25 +40,24 @@ var nextID = 2
 
 func sendError(c *gin.Context, statusCode int, message, code string) {
 	err := fastapify.NewApiError(statusCode, message, code, nil)
-	status, res := response.HandleError(err)
+	status, res := fastapify.HandleError(err)
 	c.JSON(status, res)
 }
 
 // GetUser - GET /users/:id
-func GetUser(c *gin.Context) {
+func GetUser(c *gin.Context) any {
 	req := fastapify.Req[UserIdReq](c)
 
 	for _, u := range users {
 		if u.ID == req.ID {
-			c.JSON(200, response.NewApiResponse(200, u, "Success"))
-			return
+			return fastapify.NewApiResponse(200, u, "Success")
 		}
 	}
-	sendError(c, 404, "User not found", fastapify.ErrNotFound)
+	return fastapify.NotFound("User not found")
 }
 
 // CreateUser - POST /users
-func CreateUser(c *gin.Context) {
+func CreateUser(c *gin.Context) any {
 	req := fastapify.Req[CreateUserReq](c)
 
 	newUser := User{
@@ -69,11 +67,11 @@ func CreateUser(c *gin.Context) {
 	}
 	users = append(users, newUser)
 	nextID++
-	c.JSON(200, response.NewApiResponse(200, newUser, "Success"))
+	return fastapify.NewApiResponse(200, newUser, "Success")
 }
 
 // UpdateUser - PATCH /users/:id
-func UpdateUser(c *gin.Context) {
+func UpdateUser(c *gin.Context) any {
 	req := fastapify.Req[UpdateReqCombined](c)
 
 	for i, u := range users {
@@ -84,23 +82,21 @@ func UpdateUser(c *gin.Context) {
 			if req.Email != "" {
 				users[i].Email = req.Email
 			}
-			c.JSON(200, response.NewApiResponse(200, users[i], "Success"))
-			return
+			return fastapify.NewApiResponse(200, users[i], "Success")
 		}
 	}
-	sendError(c, 404, "User not found", fastapify.ErrNotFound)
+	return fastapify.NotFound("User not found")
 }
 
 // DeleteUser - DELETE /users/:id
-func DeleteUser(c *gin.Context) {
+func DeleteUser(c *gin.Context) any {
 	req := fastapify.Req[UserIdReq](c)
 
 	for i, u := range users {
 		if u.ID == req.ID {
 			users = append(users[:i], users[i+1:]...)
-			c.JSON(200, response.NewApiResponse[*User](200, nil, "Success"))
-			return
+			return fastapify.NewApiResponse[*User](200, nil, "Success")
 		}
 	}
-	sendError(c, 404, "User not found", fastapify.ErrNotFound)
+	return fastapify.NotFound("User not found")
 }

@@ -1,4 +1,4 @@
-package response
+package internal
 
 import (
 	"errors"

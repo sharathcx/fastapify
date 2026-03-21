@@ -1,4 +1,4 @@
-package openapi
+package fastapify
 
 import (
 	"net/http"
@@ -6,49 +6,37 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/sharathcx/fastapify/internal/router"
 )
 
-// SetupSwagger registers the OpenAPI JSON endpoint and Swagger UI page.
-func SetupSwagger(engine *gin.Engine, routes []router.RouteMeta, jsonPath string) {
-	engine.GET(jsonPath, func(c *gin.Context) {
-		docs := BuildOpenAPI(routes)
+func (w *Wrapper) SetupSwagger(jsonPath string) {
+	w.Engine.GET(jsonPath, func(c *gin.Context) {
+		docs := BuildOpenAPI(w.Routes)
 		c.JSON(http.StatusOK, docs)
 	})
 
 	docsHTML := `
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fastapify API</title>
-    <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.0.0/swagger-ui.css">
+    <style>
+        body { margin: 0; }
+    </style>
 </head>
 <body>
-    <div id="swagger-ui"></div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.0.0/swagger-ui-bundle.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.0.0/swagger-ui-standalone-preset.js"></script>
-    <script>
-    window.onload = function() {
-        const ui = SwaggerUIBundle({
-            url: "` + jsonPath + `",
-            dom_id: '#swagger-ui',
-            presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
-            layout: "StandaloneLayout"
-        })
-    }
-    </script>
+    <script id="api-reference" data-url="` + jsonPath + `" data-configuration='{"theme":"deepSpace","layout":"modern","hideModels":true}'></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
 </body>
 </html>`
 
-	engine.GET("/docs", func(c *gin.Context) {
+	w.Engine.GET("/docs", func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(docsHTML))
 	})
 }
 
-// BuildOpenAPI generates an OpenAPI 3.0 specification from route metadata.
-func BuildOpenAPI(routes []router.RouteMeta) map[string]interface{} {
+func BuildOpenAPI(routes []RouteMeta) map[string]interface{} {
 	docs := map[string]interface{}{
 		"openapi": "3.0.3",
 		"info": map[string]interface{}{
@@ -56,6 +44,18 @@ func BuildOpenAPI(routes []router.RouteMeta) map[string]interface{} {
 			"version": "1.0.0",
 		},
 		"paths": map[string]interface{}{},
+		"components": map[string]interface{}{
+			"securitySchemes": map[string]interface{}{
+				"BearerAuth": map[string]interface{}{
+					"type":         "http",
+					"scheme":       "bearer",
+					"bearerFormat": "JWT",
+				},
+			},
+		},
+		"security": []map[string]interface{}{
+			{"BearerAuth": []string{}},
+		},
 	}
 
 	for _, route := range routes {
@@ -87,16 +87,33 @@ func BuildOpenAPI(routes []router.RouteMeta) map[string]interface{} {
 			},
 		}
 
-		// Path params from route path pattern
+		// Path params — use ParamsType schema if available, otherwise extract from path
 		params := []interface{}{}
-		pathParamNames := router.ExtractParamNames(route.Path)
-		for _, name := range pathParamNames {
-			params = append(params, map[string]interface{}{
-				"name":     name,
-				"in":       "path",
-				"required": true,
-				"schema":   map[string]string{"type": "string"},
-			})
+		if route.ParamsType != nil && route.ParamsType.Kind() == reflect.Struct {
+			for i := 0; i < route.ParamsType.NumField(); i++ {
+				field := route.ParamsType.Field(i)
+				uriTag := field.Tag.Get("uri")
+				if uriTag == "" {
+					continue
+				}
+				required := strings.Contains(field.Tag.Get("binding"), "required")
+				params = append(params, map[string]interface{}{
+					"name":     uriTag,
+					"in":       "path",
+					"required": required,
+					"schema":   map[string]string{"type": typeToOAS(field.Type.Kind())},
+				})
+			}
+		} else {
+			pathParamNames := extractParamNames(route.Path)
+			for _, name := range pathParamNames {
+				params = append(params, map[string]interface{}{
+					"name":     name,
+					"in":       "path",
+					"required": true,
+					"schema":   map[string]string{"type": "string"},
+				})
+			}
 		}
 
 		// Query params from BodyType's `form` tags (for GET requests)

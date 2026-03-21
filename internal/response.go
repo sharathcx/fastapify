@@ -1,4 +1,4 @@
-package response
+package internal
 
 type ApiResponse[T any] struct {
 	StatusCode int    `json:"statusCode"`
