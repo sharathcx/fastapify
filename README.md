@@ -7,7 +7,7 @@ Fastapify is a minimalist Go module built on top of [Gin](https://gin-gonic.com/
 ## Installation
 
 ```bash
-go get github.com/sharathcx/fastapify@v0.2.0
+go get github.com/sharathcx/fastapify@v0.2.1
 ```
 
 ## Setup & Example Usage
