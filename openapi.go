@@ -37,6 +37,8 @@ func (w *Wrapper) SetupSwagger(jsonPath string) {
 }
 
 func BuildOpenAPI(routes []RouteMeta) map[string]interface{} {
+	schemas := map[string]interface{}{}
+
 	docs := map[string]interface{}{
 		"openapi": "3.0.3",
 		"info": map[string]interface{}{
@@ -45,6 +47,7 @@ func BuildOpenAPI(routes []RouteMeta) map[string]interface{} {
 		},
 		"paths": map[string]interface{}{},
 		"components": map[string]interface{}{
+			"schemas": schemas,
 			"securitySchemes": map[string]interface{}{
 				"BearerAuth": map[string]interface{}{
 					"type":         "http",
@@ -78,7 +81,7 @@ func BuildOpenAPI(routes []RouteMeta) map[string]interface{} {
 								if route.ResponseType == nil {
 									return map[string]interface{}{"type": "object"}
 								}
-								return buildSchema(route.ResponseType)
+								return buildSchemaRef(route.ResponseType, schemas)
 							}(),
 						},
 					},
@@ -140,16 +143,14 @@ func BuildOpenAPI(routes []RouteMeta) map[string]interface{} {
 
 		// Request body for write methods
 		if route.BodyType != nil && (route.Method == "POST" || route.Method == "PUT" || route.Method == "PATCH") {
-			schema := buildSchema(route.BodyType)
-			if props, ok := schema["properties"]; ok && len(props.(map[string]interface{})) > 0 {
-				methodObj["requestBody"] = map[string]interface{}{
-					"required": true,
-					"content": map[string]interface{}{
-						"application/json": map[string]interface{}{
-							"schema": schema,
-						},
+			schema := buildSchemaRef(route.BodyType, schemas)
+			methodObj["requestBody"] = map[string]interface{}{
+				"required": true,
+				"content": map[string]interface{}{
+					"application/json": map[string]interface{}{
+						"schema": schema,
 					},
-				}
+				},
 			}
 		}
 
@@ -160,7 +161,35 @@ func BuildOpenAPI(routes []RouteMeta) map[string]interface{} {
 	return docs
 }
 
-func buildSchema(t reflect.Type) map[string]interface{} {
+// buildSchemaRef returns a $ref for named structs (registering them in schemas),
+// or an inline schema for primitives, slices, and anonymous types.
+func buildSchemaRef(t reflect.Type, schemas map[string]interface{}) map[string]interface{} {
+	if t == nil {
+		return map[string]interface{}{}
+	}
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	// Named structs get a $ref
+	if t.Kind() == reflect.Struct && t.Name() != "" && t.Name() != "Time" {
+		name := t.Name()
+		if _, exists := schemas[name]; !exists {
+			// Register a placeholder first to break circular references
+			schemas[name] = map[string]interface{}{"type": "object"}
+			// Now build the full schema
+			schemas[name] = buildSchemaInline(t, schemas)
+		}
+		return map[string]interface{}{
+			"$ref": "#/components/schemas/" + name,
+		}
+	}
+
+	return buildSchemaInline(t, schemas)
+}
+
+// buildSchemaInline builds the full inline schema for a type.
+func buildSchemaInline(t reflect.Type, schemas map[string]interface{}) map[string]interface{} {
 	if t == nil {
 		return map[string]interface{}{}
 	}
@@ -193,7 +222,7 @@ func buildSchema(t reflect.Type) map[string]interface{} {
 			if strings.Contains(field.Tag.Get("binding"), "required") {
 				required = append(required, name)
 			}
-			props[name] = buildSchema(field.Type)
+			props[name] = buildSchemaRef(field.Type, schemas)
 		}
 
 		schema := map[string]interface{}{
@@ -207,7 +236,7 @@ func buildSchema(t reflect.Type) map[string]interface{} {
 	} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 		return map[string]interface{}{
 			"type":  "array",
-			"items": buildSchema(t.Elem()),
+			"items": buildSchemaRef(t.Elem(), schemas),
 		}
 	}
 
